@@ -109,6 +109,52 @@ Course mentions:
 - Fuzzy matching for typos.
 - Confusion matrix to see wrong hits/misses.
 
+## Walmart / waLLMartCache example
+
+Course transcript mentions Walmart-style production semantic cache: `waLLMartCache`.
+
+Slide/paper link was blocked with 403 in the conversation, but transcript explained enough.
+
+Big point:
+
+> Semantic cache alone is not enough for production.
+
+Walmart-style system adds extra safety:
+
+- Redis/distributed cache: cache works across many nodes.
+- Decision Engine: decides when cache should NOT answer.
+- FAQ preload: trusted common answers are loaded before users ask.
+
+Decision Engine can bypass cache for risky queries:
+
+- code questions
+- time-sensitive questions
+- questions needing fresh data
+- questions needing user/product/order context
+
+If risky, go normal LLM/RAG/database path.
+
+Caveman version:
+
+- Cache is shortcut.
+- Shortcut not always safe.
+- Decision Engine asks: “safe to use shortcut?”
+- If no, do real lookup.
+
+The best setup in transcript was WMC + Decision Engine + FAQ preload.
+It got close to 90% accuracy because wrong cache hits reduced.
+
+This supports our doubt:
+
+Refund question may look same, but product/user/time can change answer.
+So production cache needs guardrails, metadata, and database grounding.
+
+Better name for this full setup:
+
+- production semantic caching with decision engine
+- context-aware semantic caching
+- semantic cache with policy/metadata guardrails
+
 ## Is this hybrid search?
 
 Not exactly.
