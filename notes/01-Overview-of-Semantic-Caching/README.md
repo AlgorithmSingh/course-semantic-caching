@@ -1,4 +1,4 @@
-# Semantic Caching Notes — 2026-07-04
+# Overview of Semantic Caching
 
 ## Course idea
 
