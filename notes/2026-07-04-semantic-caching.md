@@ -111,9 +111,11 @@ Course mentions:
 
 ## Walmart / waLLMartCache example
 
-Course transcript mentions Walmart-style production semantic cache: `waLLMartCache`.
+![Real World Example @ Walmart](../image.png)
 
-Slide/paper link was blocked with 403 in the conversation, but transcript explained enough.
+Course transcript + slide mention Walmart-style production semantic cache: `waLLMartCache`.
+
+Slide/paper link was blocked with 403 in the conversation, but image gives key points.
 
 Big point:
 
@@ -124,6 +126,8 @@ Walmart-style system adds extra safety:
 - Redis/distributed cache: cache works across many nodes.
 - Decision Engine: decides when cache should NOT answer.
 - FAQ preload: trusted common answers are loaded before users ask.
+- Best row in slide: `WMC(4N)+DE+FAQ`.
+- Accuracy shown: `89.6%` for regular queries, `81.4%` overall/all.
 
 Decision Engine can bypass cache for risky queries:
 
