@@ -207,6 +207,48 @@ Caveman version:
 - L2 = fetch the real answer fast.
 - Each tenant has own drawer.
 
+### Doubt: why split L1 and L2 at all?
+
+Good challenge: a vector DB **can** store the payload too. RedisVL's own semantic
+cache index holds `prompt`, `response`, `metadata`, and `prompt_vector` together, and
+`check()` can return the cached response directly. So L1 is not "unable" to return the answer.
+
+So the split is a **design choice**, not a limitation. Book-index analogy:
+
+```text
+L1 = the back-of-book index   "refund policy" -> page 184
+L2 = the actual page          page 184 -> full explanation
+```
+
+Concrete entry:
+
+```text
+L1 (vector DB):   cache_id 8842 | embedding(embed "How do I get refund?") | tenant=A
+L2 (Redis):       key 8842      | "You can return eligible TVs within 15 days..."
+
+new query "What is the refund policy?"
+  -> embed -> L1 vector search -> closest = cache_id 8842
+  -> L2 lookup key 8842 -> return answer
+```
+
+Why Walmart separates them at production scale:
+
+- **Keep vector search lean** — L1 holds only embeddings + IDs + tenant + small metadata,
+  not bulky LLM responses/documents. Faster, smaller ANN index.
+- **Let Redis do what Redis is good at** — L2 does fast key-value reads, TTL/expiry,
+  eviction, simple updates/deletes.
+- **Tenant separation** — L1 searches only inside a tenant's partition; the id it returns
+  (e.g. `A-8842` vs `B-3109`) points into that tenant's L2 slice.
+
+Answer to the challenge in one line:
+
+```text
+Can L1 return payload directly?   Yes.
+Is Walmart doing that here?        No — L1 returns an id, L2 returns the payload.
+Why split?                         Separate semantic search from fast object storage:
+                                   cleaner scaling, TTL/eviction, and tenant isolation.
+```
+
 ## Decision Engine flow (the gate)
 
 ![Walmart Decision Engine flow](walmart-decision-engine.png)
@@ -287,6 +329,54 @@ sub-question re-hits the LLM/RAG. With cache, repeated sub-questions get cheap.
 
 Demo UI: load a website URL → extract chunks → build knowledge base → ask question →
 performance log shows per-step LLM/cache hits, time, and tokens.
+
+### Key insight: cache at the sub-question level
+
+The important nuance is **where** the cache sits. It caches *sub-questions*, not the whole
+messy user question.
+
+The full user question rarely repeats:
+
+```text
+"I'm traveling overseas with my wife in a few months. Reliable AT&T service?
+ What coverage, how much, and does it differ on land vs cruise ship?"
+```
+
+But after `decompose_query`, the pieces are reusable across users:
+
+```text
+Q1: What AT&T international plans exist?          <- likely repeats
+Q2: What does the International Day Pass cost?    <- likely repeats
+Q3: Does AT&T work on cruise ships?              <- likely repeats
+Q4: Is it charged per line?                       <- likely repeats
+```
+
+A later, totally different question ("Going to Italy on a cruise, what AT&T plan?")
+overlaps on Q1/Q3 → cache hits on the sub-questions, only Italy-specific part needs research.
+
+So the mental model ladder:
+
+```text
+Bad:      cache the final answer to each big user question   (almost never hits)
+Better:   cache reusable sub-results inside the research loop
+Best:     cache sub-results only when context, freshness, and safety checks pass
+```
+
+### The freshness danger
+
+Sub-question caching is powerful but can go stale. A cached "Day Pass costs $10/day" is
+wrong after a price change. So each cached sub-answer needs a freshness gate:
+
+```text
+sub-question -> check_cache -> found?
+  -> Is it fresh?  TTL valid?  policy version same?  time-sensitive?
+       yes -> use cached answer
+       no  -> re-research / RAG
+```
+
+Cache when: repeated/reusable, not personal, not stale, context matches, high confidence.
+Refresh/skip when: pricing/policy may have changed, needs account data, or depends on
+date/location/order/profile. Same rule as the Decision Engine — just applied per sub-answer.
 
 ## Is this hybrid search?
 
