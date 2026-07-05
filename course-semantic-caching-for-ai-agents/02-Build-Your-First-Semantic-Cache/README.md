@@ -1289,6 +1289,45 @@ Gateway/proxy architecture instead of in-notebook? Then reach for
 
 Simple answer for this course's notebook: **GPTCache with SQLite + FAISS.**
 
+### What about pgvector?
+
+Good option **if you already run Postgres** — but a key distinction:
+
+```text
+pgvector = vector search inside Postgres
+         != a full semantic-cache library
+```
+
+pgvector is the **storage + search layer**. It can hold everything you need:
+
+```text
+prompt, response, embedding vector, metadata, created_at, tenant_id, ttl/expires_at
+```
+
+...and search by vector similarity. But something still has to do the **cache behavior**:
+
+```text
+embed query -> search pgvector -> compare threshold
+  -> hit  : return cached response
+  -> miss : call LLM, store new response
+  -> expire old entries
+```
+
+Don't want to write that glue yourself? Use a library that already supports pgvector as a
+backend:
+
+```text
+RedisVL SemanticCache + Redis   ->   GPTCache + Postgres/pgvector
+```
+
+Postgres holds both the cached response data and the vectors; GPTCache provides the
+`check`/`store` logic. (LangChain also has Postgres/pgvector semantic-cache integrations,
+but verify the exact version's support before choosing it — it varies by backend.)
+
+One-liner: **pgvector is a solid backend, not the whole solution — pair it with GPTCache
+(or similar) for RedisVL-like behavior without writing the wrapper.** If you're fine
+writing a little glue, pgvector by itself is very straightforward.
+
 ### "No semantic caching at all?"
 
 Then there is no cache-hit path — every query pays full cost:
