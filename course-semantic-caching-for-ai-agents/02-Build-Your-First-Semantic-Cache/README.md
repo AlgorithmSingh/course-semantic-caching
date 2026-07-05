@@ -1376,3 +1376,102 @@ user question -> RAG / tool / LLM -> answer
 
 No shortcut, no reuse of past meaning. That is exactly the cost the semantic cache exists
 to avoid.
+
+## Library options by vector DB
+
+Which library gives you semantic-cache behavior on top of which backend:
+
+```text
+Redis              -> RedisVL SemanticCache
+SQLite + FAISS     -> GPTCache
+Postgres/pgvector  -> GPTCache, or custom wrapper
+Qdrant             -> GPTCache or LiteLLM Proxy
+Milvus             -> GPTCache
+Weaviate           -> GPTCache
+Chroma             -> GPTCache
+OpenSearch         -> LangChain semantic cache
+Cassandra/Astra    -> LangChain semantic cache
+SingleStoreDB      -> LangChain semantic cache
+Azure Cosmos DB    -> LangChain semantic cache
+Gateway-level      -> LiteLLM Proxy, Portkey
+```
+
+**The single most important rule:**
+
+```text
+Vector DB support does NOT automatically mean semantic-cache support.
+```
+
+A vector DB gives you *similarity search*. A semantic-cache **library** adds the whole
+workflow on top: prompt/response storage, threshold hit/miss rules, TTL, metadata,
+namespaces, and LLM fallback wiring.
+
+### Capability tradeoff table
+
+Assuming each tool *could* do the full list, here is how completely each actually does it:
+
+```text
+Capability                                RedisVL   GPTCache      LangChain Cache   LiteLLM Proxy   LlamaIndex
+-----------------------------------------------------------------------------------------------------------------
+embedding the prompt/query                Yes       Yes           Yes               Yes             Partial
+storing prompt, response, vector, meta    Yes       Yes           Backend-specific  Yes             Partial/custom
+vector similarity search                  Yes       Yes           Backend-specific  Yes             Yes
+distance threshold hit/miss logic         Yes       Yes           Yes if semantic   Yes             You build it
+returning cached responses on hits        Yes       Yes           Yes               Yes             You build it
+storing new responses on misses           Manual*   Yes/Manual    Manual/LC path    Yes/proxy path  You build it
+TTL / expiry                              Yes       Backend-spec  Backend-specific  Yes             Not primary
+namespaces / separate cache names         Yes       Partial       Backend-specific  Yes             Index-specific
+backend persistence + fast lookup         Redis     Backend       Backend-specific  Backend-spec    Vector-store-spec
+```
+
+`Manual*` (RedisVL): it gives you `cache.store(...)`, but **your app** calls it after a
+miss — it does not auto-call your LLM and store the answer unless your code does.
+
+### Per-library summary
+
+- **RedisVL SemanticCache** — cleanest built-in semantic cache; best when Redis is
+  acceptable. Handles embedding, vector search, threshold, TTL, namespaces, Redis storage.
+  Tradeoff: Redis-specific, not a general adapter for every vector DB.
+- **GPTCache** — best "no Redis, no hand-written wrapper" option. Purpose-built for
+  semantic LLM response caching over many backends (FAISS, pgvector, Milvus, Qdrant,
+  Weaviate, Chroma). Tradeoff: check maintenance / version / production maturity first.
+  **Owned by Zilliz** (the company behind the Milvus vector DB); repo `zilliztech/GPTCache`.
+- **LangChain semantic cache** — good only if your LLM calls *already* go through LangChain
+  and your backend is a supported semantic-cache class (Redis, Cassandra/Astra, Azure
+  Cosmos DB, OpenSearch, SingleStoreDB, GPTCache integration). **pgvector caveat:**
+  LangChain `PGVector` is a vector *store*, not a ready `PGVectorSemanticCache` — with
+  LangChain + pgvector you'd write custom glue.
+- **LiteLLM Proxy** — gateway architecture; app sends LLM requests through the proxy and
+  the proxy caches (e.g. Qdrant/Redis semantic cache). Great for centralized caching across
+  many apps/models. Tradeoff: architectural complexity, not a tiny local object.
+- **Portkey** — gateway/product with simple + semantic caching plus observability, routing,
+  governance. Tradeoff: vendor/platform dependency, plan/deployment constraints.
+- **LlamaIndex** — excellent for RAG/ingestion/retrieval, **not** a direct response-cache
+  replacement; you'd compose the hit/miss workflow yourself.
+
+### Decision tree
+
+```text
+Cleanest production cache, Redis is okay      -> RedisVL SemanticCache
+Local notebook, no Redis                      -> GPTCache + SQLite + FAISS
+Postgres/pgvector                             -> GPTCache + pgvector (or accept writing glue)
+Qdrant + centralized model routing            -> LiteLLM Proxy + Qdrant
+Already using LangChain + supported backend   -> LangChain semantic cache
+Want observability/gateway/product            -> Portkey or LiteLLM Proxy
+Building RAG pipelines, not response caching   -> LlamaIndex
+```
+
+Completeness ranking as a semantic-cache abstraction:
+
+```text
+1. RedisVL SemanticCache
+2. GPTCache
+3. LiteLLM Proxy semantic cache
+4. LangChain semantic cache (only if supported backend)
+5. LlamaIndex (not really for this exact job)
+```
+
+**Bottom line (GPTCache vs LangChain):** if you want a *standalone* `cache.check` /
+`cache.store` object outside LangChain → **GPTCache**. If your app is already built around
+LangChain calls → **LangChain cache** plugs into the call path. For pgvector specifically,
+GPTCache is the cleaner no-wrapper choice.
