@@ -1078,17 +1078,55 @@ Best fit when:
 ```text
 Your app already uses LangChain model calls.
 You want caching to plug into LangChain's LLM call path.
+You are using one of LangChain's existing semantic-cache backends.
 ```
 
-LangChain has semantic cache integrations for several backends, including examples/references around Cassandra/Astra, Azure Cosmos DB, OpenSearch, SingleStoreDB, Redis, and GPTCache.
+LangChain does have semantic cache integrations, but the important research finding is that LangChain is **not** currently the clean answer for Postgres/pgvector semantic response caching.
 
-This is less ideal if your app uses direct OpenAI/Anthropic SDK calls and you want a standalone cache object.
+Found LangChain semantic cache classes include:
+
+```text
+RedisSemanticCache
+CassandraSemanticCache / Astra semantic cache path
+AzureCosmosDBSemanticCache
+AzureCosmosDBNoSqlSemanticCache
+OpenSearchSemanticCache
+SingleStoreDBSemanticCache
+GPTCache adapter/integration
+```
+
+What was **not** found:
+
+```text
+No official PostgresSemanticCache
+No official PGVectorSemanticCache
+No ready LangChain class that is equivalent to RedisVL SemanticCache but backed by pgvector
+```
+
+LangChain does have `PGVector`, but that is a vector store integration, not a complete LLM semantic response cache. In other words, `PGVector` can store/search vectors, but it does not automatically give you the full cache behavior:
+
+```text
+LLM prompt -> embedding -> pgvector search -> threshold hit/miss -> cached response -> TTL/staleness policy -> store miss response
+```
+
+To use LangChain + pgvector as a semantic response cache, you would likely need to implement a custom LangChain `BaseCache` or glue together the vector store plus response storage yourself. That violates the original goal of "I do not want to make my own wrapper."
+
+So the practical conclusion is:
+
+```text
+If using LangChain and one of its supported semantic cache backends fits, LangChain is convenient.
+If specifically using Postgres/pgvector, LangChain is not currently a no-wrapper replacement for RedisVL SemanticCache.
+If you want pgvector without writing the wrapper, GPTCache + pgvector is still the more relevant path to investigate.
+```
+
+This is less ideal if your app uses direct OpenAI/Anthropic SDK calls and you want a standalone cache object. It is also less ideal if your desired backend is specifically Postgres/pgvector and you want the library to provide the semantic response cache abstraction for you.
 
 Sources:
 
 ```text
 https://python.langchain.com/docs/integrations/llm_caching/
 https://reference.langchain.com/python/integrations/langchain_community/cache/
+https://raw.githubusercontent.com/langchain-ai/langchain-postgres/main/langchain_postgres/vectorstores.py
 ```
 
 ### Option 4: LlamaIndex
@@ -1151,9 +1189,9 @@ LiteLLM Proxy + Qdrant
   Limitation: requires proxy architecture.
 
 LangChain semantic caches
-  Best when: your LLM calls already go through LangChain.
-  Strength: easy registration with LangChain call path.
-  Limitation: not as clean as a standalone cache object for non-LangChain apps.
+  Best when: your LLM calls already go through LangChain and a supported semantic-cache backend fits.
+  Strength: easy registration with LangChain call path for supported cache classes.
+  Limitation: no official no-wrapper Postgres/pgvector semantic response cache found; PGVector is a vector store, not a full cache.
 
 LlamaIndex
   Best when: you are caching ingestion/RAG artifacts.
